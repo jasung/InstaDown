@@ -158,16 +158,63 @@ class InstagramMediaResolver(
             val markerIndex = decoded.indexOf(sidecarMarker, searchStart)
             if (markerIndex < 0) break
 
-            val blockEnd = sidecarEndMarkers
-                .map { marker -> decoded.indexOf(marker, markerIndex + sidecarMarker.length) }
-                .filter { index -> index > markerIndex }
-                .minOrNull()
-                ?: decoded.length
-            val block = decoded.substring(markerIndex, blockEnd)
-            looseUrlRegex.findAll(block).forEach { match ->
-                addMedia(match.value, "sidecar", output)
+            val objectStart = decoded.indexOf(
+                '{',
+                startIndex = decoded.indexOf(':', markerIndex + sidecarMarker.length).coerceAtLeast(markerIndex),
+            )
+            if (objectStart < 0) break
+
+            val objectEnd = findJsonObjectEnd(decoded, objectStart)
+            if (objectEnd < 0) {
+                searchStart = markerIndex + sidecarMarker.length
+                continue
             }
-            searchStart = blockEnd
+
+            runCatching {
+                collectSidecarObject(JSONObject(decoded.substring(objectStart, objectEnd + 1)), output)
+            }
+            searchStart = objectEnd + 1
+        }
+    }
+
+    private fun collectSidecarObject(
+        sidecar: JSONObject,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        val edges = sidecar.optJSONArray("edges") ?: return
+        for (index in 0 until edges.length()) {
+            val node = edges.optJSONObject(index)?.optJSONObject("node") ?: continue
+            collectSidecarNode(node, output)
+        }
+    }
+
+    private fun collectSidecarNode(
+        node: JSONObject,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        val type = node.stringOrNull("__typename").orEmpty()
+        val videoUrl = node.stringOrNull("video_url")
+        if (type == "GraphVideo" && videoUrl != null) {
+            addMedia(videoUrl, "sidecar", output, previewOverride = bestSidecarImageUrl(node))
+            return
+        }
+
+        node.stringOrNull("display_url")?.let { url ->
+            addMedia(url, "sidecar", output)
+        }
+        addSidecarResourceUrls(node.optJSONArray("display_resources"), output)
+        addSidecarResourceUrls(node.optJSONArray("thumbnail_resources"), output)
+    }
+
+    private fun addSidecarResourceUrls(
+        resources: JSONArray?,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        if (resources == null) return
+        for (index in 0 until resources.length()) {
+            resources.optJSONObject(index)?.stringOrNull("src")?.let { url ->
+                addMedia(url, "sidecar", output)
+            }
         }
     }
 
@@ -265,18 +312,22 @@ class InstagramMediaResolver(
         raw: String,
         source: String,
         output: LinkedHashMap<String, MediaItem>,
+        previewOverride: String? = null,
     ) {
         val cleaned = cleanUrl(raw)
         if (!isLikelyMediaUrl(cleaned)) return
         val kind = kindFrom(null, cleaned)
         if (kind == MediaKind.Unknown) return
+        val previewUrl = previewOverride
+            ?.let(::cleanUrl)
+            ?.takeIf { url -> isLikelyMediaUrl(url) && kindFrom(null, url) == MediaKind.Image }
         putPreferredMedia(
             output,
             MediaItem(
                 url = cleaned,
                 kind = kind,
                 source = source,
-                previewUrl = if (kind == MediaKind.Image) cleaned else null,
+                previewUrl = previewUrl ?: if (kind == MediaKind.Image) cleaned else null,
             ),
         )
     }
@@ -377,6 +428,53 @@ class InstagramMediaResolver(
                 .replace("&quot;", "\"")
         }
         return decoded
+    }
+
+    private fun findJsonObjectEnd(
+        text: String,
+        startIndex: Int,
+    ): Int {
+        var depth = 0
+        var inString = false
+        var escaping = false
+        for (index in startIndex until text.length) {
+            val char = text[index]
+            if (inString) {
+                when {
+                    escaping -> escaping = false
+                    char == '\\' -> escaping = true
+                    char == '"' -> inString = false
+                }
+                continue
+            }
+
+            when (char) {
+                '"' -> inString = true
+                '{' -> depth += 1
+                '}' -> {
+                    depth -= 1
+                    if (depth == 0) return index
+                }
+            }
+        }
+        return -1
+    }
+
+    private fun bestSidecarImageUrl(node: JSONObject): String? {
+        var bestUrl = node.stringOrNull("display_url")
+        var bestScore = bestUrl?.let(::mediaUrlQualityScore) ?: Int.MIN_VALUE
+        val resources = node.optJSONArray("display_resources") ?: node.optJSONArray("thumbnail_resources")
+        if (resources != null) {
+            for (index in 0 until resources.length()) {
+                val url = resources.optJSONObject(index)?.stringOrNull("src") ?: continue
+                val score = mediaUrlQualityScore(url)
+                if (score > bestScore) {
+                    bestUrl = url
+                    bestScore = score
+                }
+            }
+        }
+        return bestUrl
     }
 
     private fun firstUseful(vararg values: String?): String? =
@@ -537,11 +635,6 @@ class InstagramMediaResolver(
         val escapedQuestionRegex = Regex("""\\+u003f""", RegexOption.IGNORE_CASE)
         val escapedPercentRegex = Regex("""\\+u0025""", RegexOption.IGNORE_CASE)
         val sidecarMarker = """"edge_sidecar_to_children""""
-        val sidecarEndMarkers = listOf(
-            """"edge_media_to_caption"""",
-            """"edge_media_preview_like"""",
-            """"edge_media_to_comment"""",
-        )
         val metaMediaKeys = setOf(
             "og:image",
             "og:video",
@@ -560,3 +653,7 @@ class InstagramMediaResolver(
         )
     }
 }
+
+private fun JSONObject.stringOrNull(name: String): String? =
+    optString(name)
+        .takeIf { value -> value.isNotBlank() && value != "null" }
