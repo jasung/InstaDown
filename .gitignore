@@ -1,0 +1,12 @@
+.gradle/
+.DS_Store
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+captures/
+apks/
+*.apk
+!release/
+!release/InstaDown-latest.apk
