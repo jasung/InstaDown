@@ -87,6 +87,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
@@ -104,6 +105,7 @@ private const val DEFAULT_UPDATE_APK_URL =
 class MainActivity : ComponentActivity() {
     private val viewModel: DownloadViewModel by viewModels()
     private val updateNotice = mutableStateOf<AppUpdateInfo?>(null)
+    private var updateCheckJob: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -157,7 +159,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
 
+    override fun onStart() {
+        super.onStart()
         checkForAppUpdate()
     }
 
@@ -184,7 +189,8 @@ class MainActivity : ComponentActivity() {
             }
 
     private fun checkForAppUpdate() {
-        lifecycleScope.launch {
+        if (updateNotice.value != null || updateCheckJob?.isActive == true) return
+        updateCheckJob = lifecycleScope.launch {
             val currentCode = currentVersionCode()
             val info = withContext(Dispatchers.IO) { fetchUpdateInfo() } ?: return@launch
             if (info.versionCode > currentCode) {
