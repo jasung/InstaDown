@@ -1,13 +1,13 @@
 {
   "versionName": "0.3.0",
-  "versionCode": 6,
-  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.0-build6/InstaDown-v0.3.0-build6.apk",
+  "versionCode": 7,
+  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.0-build7/InstaDown-v0.3.0-build7.apk",
   "message": "새 버전이 있습니다.",
   "releaseNotes": [
     "공유 메뉴에서 바로 미리보기를 시작합니다.",
     "캐러셀 게시물의 첫 이미지가 정사각형으로 잘리는 문제를 줄였습니다.",
     "캐러셀 게시물에서 관련 게시물 이미지가 섞이지 않도록 수정했습니다.",
-    "앱 실행 시 빌드번호를 확인해 업데이트 알림을 표시합니다."
+    "앱 실행과 복귀 시 빌드번호를 확인해 업데이트 알림을 표시합니다."
   ],
   "required": false
 }
