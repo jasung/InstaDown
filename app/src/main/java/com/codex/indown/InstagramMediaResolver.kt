@@ -95,15 +95,26 @@ class InstagramMediaResolver(
         collectSidecarUrls(html, sidecar)
         collectMeta(html, meta)
         collectLdJson(html, json)
-        collectKeyedUrls(html, keyed)
+        if (sidecar.isEmpty() && json.isEmpty() && meta.isEmpty()) {
+            collectKeyedUrls(html, keyed)
+        }
 
         val selected = LinkedHashMap<String, MediaItem>()
-        (sidecar.values + json.values + keyed.values + meta.values).forEach { item ->
+        val structuredItems = if (sidecar.isNotEmpty()) {
+            sidecar.values
+        } else {
+            json.values + keyed.values + meta.values
+        }
+        structuredItems.forEach { item ->
             putPreferredMedia(selected, item)
         }
 
-        if (sidecar.isEmpty()) {
-            collectLooseCdnUrls(html, selected)
+        if (selected.isEmpty()) {
+            val loose = LinkedHashMap<String, MediaItem>()
+            collectLooseCdnUrls(html, loose)
+            if (loose.size == 1) {
+                loose.values.forEach { item -> putPreferredMedia(selected, item) }
+            }
         }
 
         val previewUrl = meta.values.firstOrNull { it.kind == MediaKind.Image }?.url
