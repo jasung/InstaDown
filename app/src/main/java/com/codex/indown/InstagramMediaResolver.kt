@@ -123,7 +123,8 @@ class InstagramMediaResolver(
             it.kind == MediaKind.Image && it.source != "meta"
         }
 
-        val items = selected.values
+        val filteredItems = filterCroppedEmbeddedImages(selected.values.toList())
+        val items = filteredItems
             .filterNot { item ->
                 hasVideo && hasStructuredImages && item.source == "meta" && item.kind == MediaKind.Image
             }
@@ -516,6 +517,19 @@ class InstagramMediaResolver(
         }
     }
 
+    private fun filterCroppedEmbeddedImages(items: List<MediaItem>): List<MediaItem> {
+        val hasNonCroppedImage = items.any { item ->
+            item.kind == MediaKind.Image && !isCroppedInstagramImageUrl(item.url)
+        }
+        if (!hasNonCroppedImage) return items
+
+        return items.filterNot { item ->
+            item.kind == MediaKind.Image &&
+                item.source != "sidecar" &&
+                isCroppedInstagramImageUrl(item.url)
+        }
+    }
+
     private fun selectLooseFallbackItems(items: Collection<MediaItem>): List<MediaItem> {
         if (items.size <= 1) return items.toList()
         val reliableItems = items.filter { item ->
@@ -562,7 +576,7 @@ class InstagramMediaResolver(
             .contains("/accounts/login")
 
     private fun isLikelyProfileImageUrl(lowerUrl: String): Boolean =
-        lowerUrl.contains("t51.2885-19")
+        lowerUrl.contains("profile_pic") || profileImagePathRegex.containsMatchIn(lowerUrl)
 
     private fun mediaPriority(item: MediaItem): Int {
         var score = when (item.source) {
@@ -653,6 +667,7 @@ class InstagramMediaResolver(
         )
         val looseUrlRegex = Regex("""https?:\\?/\\?/[^"'<>\s)]+""")
         val mediaExtensionRegex = Regex("""\.(jpg|jpeg|png|webp|mp4|mov)(\?|&|$)""")
+        val profileImagePathRegex = Regex("""/t51\.[^/]*-19/""")
         val croppedStpRegex = Regex("""(^|_)c\d+(?:\.\d+){3}a(?:_|$)""")
         val stpSizeRegex = Regex("""(?:^|_)[ps](\d+)x(\d+)(?:_|$)""")
         val escapedSlashRegex = Regex("""\\+/""")
