@@ -15,7 +15,7 @@ class InstagramMediaResolver(
 ) {
     suspend fun resolve(input: String): ResolvedMedia = withContext(Dispatchers.IO) {
         val pageUrl = extractFirstUrl(input)
-            ?: throw IllegalArgumentException("링크를 찾지 못했어.")
+            ?: throw IllegalArgumentException("링크를 찾지 못했습니다.")
 
         val selected = LinkedHashMap<String, MediaItem>()
         var postInfo = PostInfo()
@@ -55,12 +55,12 @@ class InstagramMediaResolver(
 
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Instagram 응답이 실패했어: HTTP ${response.code}")
+                throw IOException("Instagram 응답에 실패했습니다: HTTP ${response.code}")
             }
 
             val responseUrl = response.request.url.toString()
             val contentType = response.header("Content-Type").orEmpty()
-            val body = response.body ?: throw IOException("응답 본문이 비어있어.")
+            val body = response.body ?: throw IOException("응답 본문이 비어 있습니다.")
             if (isLoginPage(responseUrl)) {
                 throw IOException("로그인이 필요하거나 공개 게시물 정보가 막혀 있어.")
             }

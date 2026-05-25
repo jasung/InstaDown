@@ -355,7 +355,7 @@ private fun UpdateNoticeDialog(
         dismissButton = {
             if (!updateInfo.required) {
                 TextButton(onClick = onDismiss) {
-                    Text("나중에")
+                    Text("나중에 하기")
                 }
             }
         },
@@ -474,7 +474,7 @@ private fun InDownScreen(
             ) {
                 Icon(Icons.Outlined.History, contentDescription = null)
                 Spacer(modifier = Modifier.size(8.dp))
-                Text("기록보기 ${state.recentLinks.size}/30")
+                Text("기록 보기 ${state.recentLinks.size}/30")
             }
 
             if (state.isWorking) {
@@ -539,9 +539,9 @@ private fun MediaList(
         if (state.previewItems.isEmpty() && state.results.isEmpty()) {
             Text(
                 text = if (state.checkedMedia) {
-                    "저장할 이미지나 영상은 못 찾았어."
+                    "저장할 이미지나 영상을 찾지 못했습니다."
                 } else {
-                    "링크를 붙여넣으면 미리보기가 나와."
+                    "링크를 붙여넣으면 미리보기가 표시됩니다."
                 },
                 color = Color(0xFF7A5A63),
                 style = MaterialTheme.typography.bodyMedium,
@@ -631,7 +631,7 @@ private fun RecentLinksDialog(
         text = {
             if (recentLinks.isEmpty()) {
                 Text(
-                    text = "저장된 링크가 없어.",
+                    text = "저장된 링크가 없습니다.",
                     color = Color(0xFF7A5A63),
                 )
             } else {
@@ -879,14 +879,14 @@ private fun ResultRow(result: DownloadResult) {
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = result.fileName ?: "실패",
+                    text = result.fileName ?: "실패했습니다.",
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = if (success) "${kindLabel(result.item.kind)} 저장됨" else result.error.orEmpty(),
+                    text = if (success) "${kindLabel(result.item.kind)} 저장되었습니다." else result.error.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFF7A5A63),
                     maxLines = 2,
@@ -937,7 +937,7 @@ private fun displayRecentLink(url: String): String {
 
 private fun formatRecentLinkTime(savedAtMillis: Long): String =
     if (savedAtMillis <= 0L) {
-        "저장 시간 없음"
+        "저장 시간이 없습니다."
     } else {
         SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date(savedAtMillis))
     }

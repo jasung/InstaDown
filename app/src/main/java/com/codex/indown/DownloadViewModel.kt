@@ -49,7 +49,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun storagePermissionDenied() {
-        _state.update { it.copy(status = "저장 권한이 필요해.") }
+        _state.update { it.copy(status = "저장 권한이 필요합니다.") }
     }
 
     fun previewLink() {
@@ -60,7 +60,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             _state.update {
                 it.copy(
                     isWorking = true,
-                    status = "미리보기 확인 중",
+                    status = "미리보기를 확인하는 중입니다.",
                     foundCount = 0,
                     postInfo = PostInfo(),
                     checkedMedia = false,
@@ -74,14 +74,18 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 val resolved = resolver.resolve(input)
                 val items = resolved.items
                 if (items.isEmpty()) {
-                    error("이미지나 영상 파일을 찾지 못했어.")
+                    error("이미지나 영상 파일을 찾지 못했습니다.")
                 }
                 val recentLinks = recentLinkStore.remember(input)
 
                 _state.update {
                     it.copy(
                         isWorking = false,
-                        status = if (items.isEmpty()) "게시물 정보 확인" else "${items.size}개 확인",
+                        status = if (items.isEmpty()) {
+                            "게시물 정보를 확인했습니다."
+                        } else {
+                            "${items.size}개를 확인했습니다."
+                        },
                         foundCount = items.size,
                         postInfo = resolved.postInfo,
                         checkedMedia = true,
@@ -94,7 +98,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 _state.update {
                     it.copy(
                         isWorking = false,
-                        status = error.message ?: "실패했어.",
+                        status = error.message ?: "실패했습니다.",
                     )
                 }
             }
@@ -132,7 +136,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
         if (current.isWorking) return
         val items = current.previewItems.filter { it.url in current.selectedUrls }
         if (items.isEmpty()) {
-            _state.update { it.copy(status = "선택한 파일이 없어.") }
+            _state.update { it.copy(status = "선택한 파일이 없습니다.") }
             return
         }
 
@@ -140,7 +144,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             _state.update {
                 it.copy(
                     isWorking = true,
-                    status = "다운로드 준비 중",
+                    status = "다운로드를 준비하는 중입니다.",
                     results = emptyList(),
                 )
             }
@@ -148,7 +152,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             runCatching {
                 val results = downloader.downloadAll(items) { currentIndex, total ->
                     _state.update {
-                        it.copy(status = "다운로드 중 $currentIndex/$total")
+                        it.copy(status = "다운로드 중입니다. $currentIndex/$total")
                     }
                 }
 
@@ -156,7 +160,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 _state.update {
                     it.copy(
                         isWorking = false,
-                        status = "완료 $successCount/${results.size}",
+                        status = "완료되었습니다. $successCount/${results.size}",
                         results = results,
                     )
                 }
@@ -164,7 +168,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 _state.update {
                     it.copy(
                         isWorking = false,
-                        status = error.message ?: "실패했어.",
+                        status = error.message ?: "실패했습니다.",
                     )
                 }
             }

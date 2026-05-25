@@ -44,7 +44,7 @@ data class RecentLink(
 data class DownloadUiState(
     val link: String = "",
     val isWorking: Boolean = false,
-    val status: String = "대기 중",
+    val status: String = "대기 중입니다.",
     val foundCount: Int = 0,
     val postInfo: PostInfo = PostInfo(),
     val checkedMedia: Boolean = false,

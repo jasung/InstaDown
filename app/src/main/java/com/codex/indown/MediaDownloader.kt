@@ -31,7 +31,7 @@ class MediaDownloader(
                 .getOrElse { error ->
                     DownloadResult(
                         item = item,
-                        error = error.message ?: "다운로드 실패",
+                        error = error.message ?: "다운로드에 실패했습니다.",
                     )
                 }
         }
@@ -53,10 +53,10 @@ class MediaDownloader(
                 error("HTTP ${response.code}")
             }
 
-            val body = response.body ?: error("파일 응답이 비어있어.")
+            val body = response.body ?: error("파일 응답이 비어 있습니다.")
             val contentType = response.header("Content-Type").orEmpty().substringBefore(";")
             if (!isMediaResponse(contentType, item)) {
-                error("이미지나 영상 응답이 아니야: ${contentType.ifBlank { "unknown" }}")
+                error("이미지나 영상 응답이 아닙니다: ${contentType.ifBlank { "알 수 없음" }}")
             }
             val extension = extensionFor(item, contentType)
             val mimeType = mimeTypeFor(item, contentType, extension)
@@ -114,12 +114,12 @@ class MediaDownloader(
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = resolver.insert(collectionUri, values)
-            ?: error("저장 위치를 만들지 못했어.")
+            ?: error("저장 위치를 만들지 못했습니다.")
 
         runCatching {
             resolver.openOutputStream(uri)?.use { output ->
                 input.use { source -> source.copyTo(output) }
-            } ?: error("저장 스트림을 열지 못했어.")
+            } ?: error("저장 스트림을 열지 못했습니다.")
 
             values.clear()
             values.put(MediaStore.MediaColumns.IS_PENDING, 0)
