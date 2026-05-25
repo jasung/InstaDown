@@ -112,8 +112,8 @@ class InstagramMediaResolver(
         if (selected.isEmpty()) {
             val loose = LinkedHashMap<String, MediaItem>()
             collectLooseCdnUrls(html, loose)
-            if (loose.size == 1) {
-                loose.values.forEach { item -> putPreferredMedia(selected, item) }
+            selectLooseFallbackItems(loose.values).forEach { item ->
+                putPreferredMedia(selected, item)
             }
         }
 
@@ -514,6 +514,15 @@ class InstagramMediaResolver(
         return items.filterNot { item ->
             item.source == "meta" && item.kind == MediaKind.Image
         }
+    }
+
+    private fun selectLooseFallbackItems(items: Collection<MediaItem>): List<MediaItem> {
+        if (items.size <= 1) return items.toList()
+        val reliableItems = items.filter { item ->
+            item.kind == MediaKind.Video ||
+                (item.kind == MediaKind.Image && !isCroppedInstagramImageUrl(item.url))
+        }
+        return if (reliableItems.size == 1) reliableItems else emptyList()
     }
 
     private fun canonicalKey(url: String): String =
