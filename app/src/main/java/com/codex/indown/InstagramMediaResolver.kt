@@ -37,7 +37,7 @@ class InstagramMediaResolver(
         }
 
         ResolvedMedia(
-            items = selected.values.toList(),
+            items = removeCrossAttemptMetaImages(selected.values.toList()),
             postInfo = postInfo,
         )
     }
@@ -507,6 +507,14 @@ class InstagramMediaResolver(
             description = current.description ?: next.description,
             siteName = current.siteName ?: next.siteName,
         )
+
+    private fun removeCrossAttemptMetaImages(items: List<MediaItem>): List<MediaItem> {
+        val hasStructuredMedia = items.any { item -> item.source != "meta" }
+        if (!hasStructuredMedia) return items
+        return items.filterNot { item ->
+            item.source == "meta" && item.kind == MediaKind.Image
+        }
+    }
 
     private fun canonicalKey(url: String): String =
         url.substringBefore("?").lowercase(Locale.US)
