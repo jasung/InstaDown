@@ -36,6 +36,11 @@ data class DownloadResult(
     val isSuccess: Boolean = error == null
 }
 
+data class RecentLink(
+    val url: String,
+    val savedAtMillis: Long,
+)
+
 data class DownloadUiState(
     val link: String = "",
     val isWorking: Boolean = false,
@@ -46,6 +51,7 @@ data class DownloadUiState(
     val previewItems: List<MediaItem> = emptyList(),
     val selectedUrls: Set<String> = emptySet(),
     val results: List<DownloadResult> = emptyList(),
+    val recentLinks: List<RecentLink> = emptyList(),
 ) {
     val selectedCount: Int = selectedUrls.size
 }

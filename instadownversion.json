@@ -1,7 +1,7 @@
 {
   "versionName": "0.3.0",
-  "versionCode": 10,
-  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.0-build10/InstaDown-v0.3.0-build10.apk",
+  "versionCode": 11,
+  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.0-build11/InstaDown-v0.3.0-build11.apk",
   "message": "새 버전이 있습니다.",
   "releaseNotes": [
     "게시물 미디어 검출 정확도를 개선했습니다.",

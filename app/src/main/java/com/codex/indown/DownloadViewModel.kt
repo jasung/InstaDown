@@ -12,7 +12,10 @@ import kotlinx.coroutines.launch
 class DownloadViewModel(application: Application) : AndroidViewModel(application) {
     private val resolver = InstagramMediaResolver()
     private val downloader = MediaDownloader(application.applicationContext)
-    private val _state = MutableStateFlow(DownloadUiState())
+    private val recentLinkStore = RecentLinkStore(application.applicationContext)
+    private val _state = MutableStateFlow(
+        DownloadUiState(recentLinks = recentLinkStore.load()),
+    )
     val state: StateFlow<DownloadUiState> = _state.asStateFlow()
 
     fun setLink(value: String) {
@@ -20,7 +23,10 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
             if (it.link == value) {
                 it
             } else {
-                DownloadUiState(link = value)
+                DownloadUiState(
+                    link = value,
+                    recentLinks = it.recentLinks,
+                )
             }
         }
     }
@@ -31,7 +37,15 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun clear() {
-        _state.value = DownloadUiState()
+        _state.update {
+            DownloadUiState(recentLinks = it.recentLinks)
+        }
+    }
+
+    fun clearRecentLinks() {
+        _state.update {
+            it.copy(recentLinks = recentLinkStore.clear())
+        }
     }
 
     fun storagePermissionDenied() {
@@ -62,6 +76,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                 if (items.isEmpty()) {
                     error("이미지나 영상 파일을 찾지 못했어.")
                 }
+                val recentLinks = recentLinkStore.remember(input)
 
                 _state.update {
                     it.copy(
@@ -72,6 +87,7 @@ class DownloadViewModel(application: Application) : AndroidViewModel(application
                         checkedMedia = true,
                         previewItems = items,
                         selectedUrls = items.map { item -> item.url }.toSet(),
+                        recentLinks = recentLinks,
                     )
                 }
             }.onFailure { error ->

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Videocam
@@ -91,7 +93,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import java.text.SimpleDateFormat
 import java.net.URI
+import java.util.Date
 import java.util.Locale
 import android.widget.VideoView
 
@@ -138,6 +142,8 @@ class MainActivity : ComponentActivity() {
                             ?.let(viewModel::setLinkAndPreview)
                     },
                     onPreview = viewModel::previewLink,
+                    onHistoryLinkSelected = viewModel::setLinkAndPreview,
+                    onClearHistory = viewModel::clearRecentLinks,
                     onToggleMedia = viewModel::toggleSelection,
                     onSelectAll = viewModel::selectAll,
                     onClearSelection = viewModel::clearSelection,
@@ -380,11 +386,15 @@ private fun InDownScreen(
     onClear: () -> Unit,
     onPaste: () -> Unit,
     onPreview: () -> Unit,
+    onHistoryLinkSelected: (String) -> Unit,
+    onClearHistory: () -> Unit,
     onToggleMedia: (String) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    var showHistory by remember { mutableStateOf(false) }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -454,6 +464,19 @@ private fun InDownScreen(
                 Text("선택 다운로드")
             }
 
+            OutlinedButton(
+                onClick = { showHistory = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                enabled = !state.isWorking,
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Icon(Icons.Outlined.History, contentDescription = null)
+                Spacer(modifier = Modifier.size(8.dp))
+                Text("기록보기 ${state.recentLinks.size}/30")
+            }
+
             if (state.isWorking) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
@@ -465,6 +488,18 @@ private fun InDownScreen(
                 onClearSelection = onClearSelection,
                 modifier = Modifier.weight(1f),
             )
+
+            if (showHistory) {
+                RecentLinksDialog(
+                    recentLinks = state.recentLinks,
+                    onOpen = { url ->
+                        showHistory = false
+                        onHistoryLinkSelected(url)
+                    },
+                    onClearHistory = onClearHistory,
+                    onDismiss = { showHistory = false },
+                )
+            }
         }
     }
 }
@@ -503,7 +538,11 @@ private fun MediaList(
     Box(modifier = modifier.fillMaxWidth()) {
         if (state.previewItems.isEmpty() && state.results.isEmpty()) {
             Text(
-                text = if (state.checkedMedia) "저장할 이미지나 영상은 못 찾았어." else "기록 없음",
+                text = if (state.checkedMedia) {
+                    "저장할 이미지나 영상은 못 찾았어."
+                } else {
+                    "링크를 붙여넣으면 미리보기가 나와."
+                },
                 color = Color(0xFF7A5A63),
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -575,6 +614,90 @@ private fun PreviewHeader(
             TextButton(onClick = onClearSelection) {
                 Text("해제")
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentLinksDialog(
+    recentLinks: List<RecentLink>,
+    onOpen: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("최근 링크") },
+        text = {
+            if (recentLinks.isEmpty()) {
+                Text(
+                    text = "저장된 링크가 없어.",
+                    color = Color(0xFF7A5A63),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(
+                        items = recentLinks,
+                        key = { link -> link.url },
+                    ) { link ->
+                        RecentLinkRow(
+                            link = link,
+                            onClick = { onOpen(link.url) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("닫기")
+            }
+        },
+        dismissButton = {
+            if (recentLinks.isNotEmpty()) {
+                TextButton(onClick = onClearHistory) {
+                    Text("전체 삭제")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun RecentLinkRow(
+    link: RecentLink,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Link,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = displayRecentLink(link.url),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = formatRecentLinkTime(link.savedAtMillis),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF7A5A63),
+                maxLines = 1,
+            )
         }
     }
 }
@@ -802,6 +925,22 @@ private fun mediaHost(url: String): String =
         .getOrNull()
         ?.removePrefix("www.")
         ?: "미디어 파일"
+
+private fun displayRecentLink(url: String): String {
+    val withoutQuery = url.substringBefore("?")
+    return withoutQuery
+        .removePrefix("https://www.")
+        .removePrefix("http://www.")
+        .removePrefix("https://")
+        .removePrefix("http://")
+}
+
+private fun formatRecentLinkTime(savedAtMillis: Long): String =
+    if (savedAtMillis <= 0L) {
+        "저장 시간 없음"
+    } else {
+        SimpleDateFormat("MM/dd HH:mm", Locale.KOREA).format(Date(savedAtMillis))
+    }
 
 private fun needsLegacyStoragePermission(context: Context): Boolean =
     Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
