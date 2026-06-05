@@ -16,6 +16,7 @@ class InstagramMediaResolver(
     suspend fun resolve(input: String): ResolvedMedia = withContext(Dispatchers.IO) {
         val pageUrl = extractFirstUrl(input)
             ?: throw IllegalArgumentException("링크를 찾지 못했습니다.")
+        val shortcode = shortcodeFrom(pageUrl)
 
         val selected = LinkedHashMap<String, MediaItem>()
         var postInfo = PostInfo()
@@ -31,13 +32,22 @@ class InstagramMediaResolver(
                 }
             }
         }
+        if (selected.values.none { it.kind == MediaKind.Video } && shortcode != null) {
+            val mirrorResolved = runCatching { resolveMirrorVideo(shortcode) }
+                .onFailure { error -> lastFailure = error }
+                .getOrDefault(ResolvedMedia(emptyList()))
+            mirrorResolved.items.forEach { item ->
+                putPreferredMedia(selected, item)
+            }
+        }
 
         if (selected.isEmpty() && !postInfo.hasContent) {
             lastFailure?.let { throw it }
         }
 
+        val items = removeCrossAttemptMetaImages(selected.values.toList())
         ResolvedMedia(
-            items = removeCrossAttemptMetaImages(selected.values.toList()),
+            items = preferMirrorVideo(items),
             postInfo = postInfo,
         )
     }
@@ -81,11 +91,17 @@ class InstagramMediaResolver(
             }
 
             val html = body.string()
-            parseHtml(html)
+            parseHtml(
+                html = html,
+                shortcode = shortcodeFrom(pageUrl) ?: shortcodeFrom(responseUrl),
+            )
         }
     }
 
-    private fun parseHtml(html: String): ResolvedMedia {
+    private fun parseHtml(
+        html: String,
+        shortcode: String?,
+    ): ResolvedMedia {
         val sidecar = LinkedHashMap<String, MediaItem>()
         val keyed = LinkedHashMap<String, MediaItem>()
         val meta = LinkedHashMap<String, MediaItem>()
@@ -93,9 +109,10 @@ class InstagramMediaResolver(
         val postInfo = collectPostInfo(html)
 
         collectSidecarUrls(html, sidecar)
+        shortcode?.let { collectCurrentMediaUrls(html, it, keyed) }
         collectMeta(html, meta)
         collectLdJson(html, json)
-        if (sidecar.isEmpty() && json.isEmpty() && meta.isEmpty()) {
+        if (sidecar.isEmpty() && json.isEmpty() && keyed.isEmpty() && meta.isEmpty()) {
             collectKeyedUrls(html, keyed)
         }
 
@@ -143,6 +160,34 @@ class InstagramMediaResolver(
             items = items,
             postInfo = postInfo,
         )
+    }
+
+    private fun resolveMirrorVideo(shortcode: String): ResolvedMedia {
+        val request = Request.Builder()
+            .url("https://www.vxinstagram.com/reel/$shortcode/")
+            .header("User-Agent", InstagramUserAgent)
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .build()
+
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("보조 미디어 응답에 실패했습니다: HTTP ${response.code}")
+            }
+            val html = response.body?.string() ?: throw IOException("보조 미디어 응답 본문이 비어 있습니다.")
+            parseMirrorHtml(html)
+        }
+    }
+
+    private fun parseMirrorHtml(html: String): ResolvedMedia {
+        val output = LinkedHashMap<String, MediaItem>()
+        metaTagRegex.findAll(html).forEach { match ->
+            val tag = match.value
+            val key = attr(tag, "property") ?: attr(tag, "name") ?: return@forEach
+            if (key.lowercase(Locale.US) !in mirrorVideoMetaKeys) return@forEach
+            val content = attr(tag, "content") ?: return@forEach
+            addMedia(content, "mirror", output)
+        }
+        return ResolvedMedia(output.values.filter { item -> item.kind == MediaKind.Video })
     }
 
     private fun collectMeta(
@@ -218,6 +263,54 @@ class InstagramMediaResolver(
         addSidecarResourceUrls(node.optJSONArray("thumbnail_resources"), output)
     }
 
+    private fun collectCurrentMediaUrls(
+        html: String,
+        shortcode: String,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        val decoded = decodeEmbeddedMediaText(html)
+        val marker = "\"shortcode\":\"$shortcode\""
+        var searchStart = 0
+        while (searchStart < decoded.length) {
+            val markerIndex = decoded.indexOf(marker, searchStart)
+            if (markerIndex < 0) break
+
+            val objectStart = findJsonObjectStartContaining(decoded, markerIndex)
+            if (objectStart < 0) {
+                searchStart = markerIndex + marker.length
+                continue
+            }
+
+            val objectEnd = findJsonObjectEnd(decoded, objectStart)
+            if (objectEnd < 0) {
+                searchStart = markerIndex + marker.length
+                continue
+            }
+
+            runCatching {
+                collectCurrentMediaObject(JSONObject(decoded.substring(objectStart, objectEnd + 1)), output)
+            }
+            searchStart = objectEnd + 1
+        }
+    }
+
+    private fun collectCurrentMediaObject(
+        media: JSONObject,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        val type = media.stringOrNull("__typename").orEmpty()
+        val videoUrl = media.stringOrNull("video_url")
+        if (type == "GraphVideo" && videoUrl != null) {
+            addMedia(videoUrl, "embedded", output, previewOverride = bestSidecarImageUrl(media))
+        }
+
+        media.stringOrNull("display_url")?.let { url ->
+            addMedia(url, "embedded", output)
+        }
+        addSidecarResourceUrls(media.optJSONArray("display_resources"), output)
+        addSidecarResourceUrls(media.optJSONArray("thumbnail_resources"), output)
+    }
+
     private fun addSidecarResourceUrls(
         resources: JSONArray?,
         output: LinkedHashMap<String, MediaItem>,
@@ -275,7 +368,7 @@ class InstagramMediaResolver(
         html: String,
         output: LinkedHashMap<String, MediaItem>,
     ) {
-        keyedUrlRegex.findAll(html).forEach { match ->
+        keyedUrlRegex.findAll(decodeEmbeddedMediaText(html)).forEach { match ->
             addMedia(match.groupValues[1], "embedded", output)
         }
     }
@@ -371,11 +464,7 @@ class InstagramMediaResolver(
     }
 
     private fun embedUrl(url: String): String? {
-        val pathSegments = runCatching { URI(url).path.orEmpty() }
-            .getOrDefault("")
-            .trim('/')
-            .split('/')
-            .filter { it.isNotBlank() }
+        val pathSegments = pathSegments(url)
         val typeIndex = pathSegments.indexOfFirst { segment ->
             segment == "p" || segment == "reel" || segment == "tv"
         }
@@ -385,6 +474,21 @@ class InstagramMediaResolver(
         val shortcode = pathSegments[typeIndex + 1]
         return "https://www.instagram.com/$type/$shortcode/embed/"
     }
+
+    private fun shortcodeFrom(url: String): String? {
+        val pathSegments = pathSegments(url)
+        val typeIndex = pathSegments.indexOfFirst { segment ->
+            segment == "p" || segment == "reel" || segment == "tv"
+        }
+        return pathSegments.getOrNull(typeIndex + 1)
+    }
+
+    private fun pathSegments(url: String): List<String> =
+        runCatching { URI(url).path.orEmpty() }
+            .getOrDefault("")
+            .trim('/')
+            .split('/')
+            .filter { it.isNotBlank() }
 
     private fun attr(tag: String, name: String): String? =
         rawAttr(tag, name)?.let(::cleanUrl)
@@ -472,6 +576,21 @@ class InstagramMediaResolver(
         return -1
     }
 
+    private fun findJsonObjectStartContaining(
+        text: String,
+        index: Int,
+    ): Int {
+        var searchBefore = index
+        while (searchBefore >= 0) {
+            val objectStart = text.lastIndexOf('{', searchBefore)
+            if (objectStart < 0) return -1
+            val objectEnd = findJsonObjectEnd(text, objectStart)
+            if (objectEnd >= index) return objectStart
+            searchBefore = objectStart - 1
+        }
+        return -1
+    }
+
     private fun bestSidecarImageUrl(node: JSONObject): String? {
         var bestUrl = node.stringOrNull("display_url")
         var bestScore = bestUrl?.let(::mediaUrlQualityScore) ?: Int.MIN_VALUE
@@ -517,6 +636,14 @@ class InstagramMediaResolver(
         }
     }
 
+    private fun preferMirrorVideo(items: List<MediaItem>): List<MediaItem> {
+        val hasMirrorVideo = items.any { item -> item.source == "mirror" && item.kind == MediaKind.Video }
+        if (!hasMirrorVideo) return items
+        return items.filter { item ->
+            item.kind == MediaKind.Video || item.source != "meta"
+        }
+    }
+
     private fun filterCroppedEmbeddedImages(items: List<MediaItem>): List<MediaItem> {
         val hasNonCroppedImage = items.any { item ->
             item.kind == MediaKind.Image && !isCroppedInstagramImageUrl(item.url)
@@ -548,7 +675,10 @@ class InstagramMediaResolver(
         val mediaExtension = mediaExtensionRegex.containsMatchIn(lower)
         val host = runCatching { URI(url).host.orEmpty().lowercase(Locale.US) }.getOrDefault("")
         val mediaHost = (host.endsWith("cdninstagram.com") && host != "static.cdninstagram.com") ||
-            host.endsWith("fbcdn.net")
+            host.endsWith("fbcdn.net") ||
+            host == "www.vxinstagram.com" ||
+            host == "vxinstagram.com" ||
+            host == "d.rapidcdn.app"
         val appResource = lower.contains("/rsrc.php/")
         return isHttp && mediaExtension && mediaHost && !appResource && !isLikelyProfileImageUrl(lower)
     }
@@ -693,6 +823,11 @@ class InstagramMediaResolver(
             "display_url",
             "thumbnail_src",
             "playbackurl",
+        )
+        val mirrorVideoMetaKeys = setOf(
+            "og:video",
+            "og:video:secure_url",
+            "twitter:player:stream",
         )
     }
 }

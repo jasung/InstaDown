@@ -14,8 +14,8 @@ android {
         applicationId = "com.codex.indown"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "0.3.0"
+        versionCode = 14
+        versionName = "0.3.1"
     }
 
     buildFeatures {
@@ -43,7 +43,7 @@ kotlin {
 
 tasks.register("exportReleaseApk") {
     group = "build"
-    description = "릴리즈 APK를 apks/InstaDown-release-v0.3.0.apk 로 내보냅니다."
+    description = "릴리즈 APK를 apks/InstaDown-v{versionName}-build{versionCode}.apk 로 내보냅니다."
     dependsOn("assembleRelease")
 
     doLast {
@@ -53,8 +53,9 @@ tasks.register("exportReleaseApk") {
         val outputDir = rootProject.layout.projectDirectory.dir("apks").asFile
         outputDir.mkdirs()
 
-        val versionName = android.defaultConfig.versionName ?: "0.3.0"
-        val targetApk = outputDir.resolve("InstaDown-release-v$versionName.apk")
+        val versionName = android.defaultConfig.versionName ?: "0.3.1"
+        val versionCode = android.defaultConfig.versionCode ?: 14
+        val targetApk = outputDir.resolve("InstaDown-v$versionName-build$versionCode.apk")
         sourceApk.copyTo(targetApk, overwrite = true)
 
         val publicReleaseDir = rootProject.layout.projectDirectory.dir("release").asFile
@@ -91,4 +92,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling:$composeVersion")
+    testImplementation("junit:junit:4.13.2")
 }

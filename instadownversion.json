@@ -1,10 +1,10 @@
 {
-  "versionName": "0.3.0",
-  "versionCode": 13,
-  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.0-build13/InstaDown-v0.3.0-build13.apk",
+  "versionName": "0.3.1",
+  "versionCode": 14,
+  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.1-build14/InstaDown-v0.3.1-build14.apk",
   "message": "새 버전이 있습니다.",
   "releaseNotes": [
-    "크롭된 이미지가 저장되는 문제를 수정했습니다."
+    "일부 Reel 영상이 이미지로만 잡히는 문제를 수정했습니다."
   ],
   "required": false
 }
