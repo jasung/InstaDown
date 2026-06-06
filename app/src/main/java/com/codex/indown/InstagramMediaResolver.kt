@@ -7,8 +7,10 @@ import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import java.math.BigInteger
 import java.net.URI
 import java.util.Locale
+import kotlin.math.abs
 
 class InstagramMediaResolver(
     private val client: OkHttpClient = InDownHttp.client,
@@ -94,7 +96,18 @@ class InstagramMediaResolver(
             parseHtml(
                 html = html,
                 shortcode = shortcodeFrom(pageUrl) ?: shortcodeFrom(responseUrl),
-            )
+            ).let { parsed ->
+                val parsedShortcode = shortcodeFrom(pageUrl) ?: shortcodeFrom(responseUrl)
+                if (profile.name == "android" && parsedShortcode != null && !isEmbedUrl(pageUrl)) {
+                    mergeResolvedMedia(
+                        parsed,
+                        runCatching { resolveApiMedia(pageUrl, parsedShortcode, html) }
+                            .getOrDefault(ResolvedMedia(emptyList())),
+                    )
+                } else {
+                    parsed
+                }
+            }
         }
     }
 
@@ -188,6 +201,127 @@ class InstagramMediaResolver(
             addMedia(content, "mirror", output)
         }
         return ResolvedMedia(output.values.filter { item -> item.kind == MediaKind.Video })
+    }
+
+    private fun resolveApiMedia(
+        pageUrl: String,
+        shortcode: String,
+        html: String,
+    ): ResolvedMedia {
+        val mediaId = mediaIdFromShortcode(shortcode) ?: return ResolvedMedia(emptyList())
+        val requestBuilder = Request.Builder()
+            .url("https://www.instagram.com/api/v1/media/$mediaId/info/")
+            .header("User-Agent", InstagramDesktopUserAgent)
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Accept-Language", "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Referer", pageUrl)
+            .header("X-ASBD-ID", "129477")
+            .header("X-IG-WWW-Claim", "0")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("X-IG-App-ID", extractRegexGroup(html, igAppIdRegex) ?: DefaultIgAppId)
+
+        extractRegexGroup(html, csrfTokenRegex)?.let { token ->
+            requestBuilder.header("X-CSRFToken", token)
+        }
+        extractRegexGroup(html, lsdTokenRegex)?.let { token ->
+            requestBuilder.header("X-FB-LSD", token)
+        }
+
+        return client.newCall(requestBuilder.build()).execute().use { response ->
+            if (!response.isSuccessful) return@use ResolvedMedia(emptyList())
+            val body = response.body?.string()?.trim().orEmpty()
+            if (!body.startsWith("{")) return@use ResolvedMedia(emptyList())
+
+            val json = runCatching { JSONObject(body) }.getOrNull() ?: return@use ResolvedMedia(emptyList())
+            val items = json.jsonArrayOrNull("items") ?: return@use ResolvedMedia(emptyList())
+            val output = LinkedHashMap<String, MediaItem>()
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                collectApiMediaItem(item, output)
+            }
+            ResolvedMedia(output.values.toList())
+        }
+    }
+
+    private fun collectApiMediaItem(
+        item: JSONObject,
+        output: LinkedHashMap<String, MediaItem>,
+    ) {
+        val carousel = item.jsonArrayOrNull("carousel_media")
+        if (carousel != null) {
+            for (index in 0 until carousel.length()) {
+                carousel.optJSONObject(index)?.let { child ->
+                    collectApiMediaItem(child, output)
+                }
+            }
+            return
+        }
+
+        val previewUrl = bestApiImageUrl(item)
+        val videoUrl = bestApiVideoUrl(item)
+        if (videoUrl != null) {
+            addMedia(videoUrl, "api", output, previewOverride = previewUrl)
+            return
+        }
+
+        previewUrl?.let { imageUrl ->
+            addMedia(imageUrl, "api", output)
+        }
+    }
+
+    private fun bestApiImageUrl(item: JSONObject): String? {
+        val versions = item.jsonObjectOrNull("image_versions2") ?: return null
+        val candidates = versions.jsonArrayOrNull("candidates") ?: return null
+        val originalWidth = item.optInt("original_width", 0)
+        val originalHeight = item.optInt("original_height", 0)
+        val originalRatio = if (originalWidth > 0 && originalHeight > 0) {
+            originalWidth.toDouble() / originalHeight.toDouble()
+        } else {
+            null
+        }
+
+        var bestMatching: JSONObject? = null
+        var bestFallback: JSONObject? = null
+        for (index in 0 until candidates.length()) {
+            val candidate = candidates.optJSONObject(index) ?: continue
+            val url = candidate.stringOrNull("url")?.let(::cleanUrl) ?: continue
+            if (!isLikelyMediaUrl(url) || kindFrom(null, url) != MediaKind.Image) continue
+
+            val width = candidate.optInt("width", 0)
+            val height = candidate.optInt("height", 0)
+            if (isBetterApiCandidate(candidate, bestFallback)) {
+                bestFallback = candidate
+            }
+            if (originalRatio != null && width > 0 && height > 0) {
+                val ratio = width.toDouble() / height.toDouble()
+                if (abs(ratio - originalRatio) <= ApiImageRatioTolerance &&
+                    isBetterApiCandidate(candidate, bestMatching)
+                ) {
+                    bestMatching = candidate
+                }
+            }
+        }
+
+        return (bestMatching ?: bestFallback)?.stringOrNull("url")?.let(::cleanUrl)
+    }
+
+    private fun bestApiVideoUrl(item: JSONObject): String? {
+        val candidates = when (val versions = item.opt("video_versions")) {
+            is JSONArray -> versions
+            is JSONObject -> versions.jsonArrayOrNull("candidates")
+            else -> null
+        } ?: return null
+
+        var best: JSONObject? = null
+        for (index in 0 until candidates.length()) {
+            val candidate = candidates.optJSONObject(index) ?: continue
+            val url = candidate.stringOrNull("url")?.let(::cleanUrl) ?: continue
+            if (!isLikelyMediaUrl(url) || kindFrom(null, url) != MediaKind.Video) continue
+            if (isBetterApiVideoCandidate(candidate, best)) {
+                best = candidate
+            }
+        }
+        return best?.stringOrNull("url")?.let(::cleanUrl)
     }
 
     private fun collectMeta(
@@ -628,6 +762,24 @@ class InstagramMediaResolver(
             siteName = current.siteName ?: next.siteName,
         )
 
+    private fun mergeResolvedMedia(
+        current: ResolvedMedia,
+        next: ResolvedMedia,
+    ): ResolvedMedia {
+        if (next.items.isEmpty()) return current
+        val output = LinkedHashMap<String, MediaItem>()
+        current.items.forEach { item ->
+            putPreferredMedia(output, item)
+        }
+        next.items.forEach { item ->
+            putPreferredMedia(output, item)
+        }
+        return ResolvedMedia(
+            items = output.values.toList(),
+            postInfo = mergePostInfo(current.postInfo, next.postInfo),
+        )
+    }
+
     private fun removeCrossAttemptMetaImages(items: List<MediaItem>): List<MediaItem> {
         val hasStructuredMedia = items.any { item -> item.source != "meta" }
         if (!hasStructuredMedia) return items
@@ -655,6 +807,35 @@ class InstagramMediaResolver(
                 item.source != "sidecar" &&
                 isCroppedInstagramImageUrl(item.url)
         }
+    }
+
+    private fun isBetterApiCandidate(
+        candidate: JSONObject,
+        current: JSONObject?,
+    ): Boolean =
+        apiCandidateScore(candidate) > (current?.let(::apiCandidateScore) ?: Int.MIN_VALUE)
+
+    private fun apiCandidateScore(candidate: JSONObject): Int {
+        val width = candidate.optInt("width", 0)
+        val height = candidate.optInt("height", 0)
+        val url = candidate.stringOrNull("url").orEmpty()
+        var score = width * height
+        if (!isCroppedInstagramImageUrl(url)) score += ApiNonCroppedBonus
+        score += mediaUrlQualityScore(url)
+        return score
+    }
+
+    private fun isBetterApiVideoCandidate(
+        candidate: JSONObject,
+        current: JSONObject?,
+    ): Boolean =
+        apiVideoCandidateScore(candidate) > (current?.let(::apiVideoCandidateScore) ?: Int.MIN_VALUE)
+
+    private fun apiVideoCandidateScore(candidate: JSONObject): Int {
+        val width = candidate.optInt("width", 0)
+        val height = candidate.optInt("height", 0)
+        val type = candidate.optInt("type", 0)
+        return (type * ApiVideoTypeWeight) + (width * height)
     }
 
     private fun selectLooseFallbackItems(items: Collection<MediaItem>): List<MediaItem> {
@@ -705,11 +886,18 @@ class InstagramMediaResolver(
             .getOrDefault("")
             .contains("/accounts/login")
 
+    private fun isEmbedUrl(url: String): Boolean =
+        runCatching { URI(url).path.orEmpty() }
+            .getOrDefault("")
+            .trimEnd('/')
+            .endsWith("/embed")
+
     private fun isLikelyProfileImageUrl(lowerUrl: String): Boolean =
         lowerUrl.contains("profile_pic") || profileImagePathRegex.containsMatchIn(lowerUrl)
 
     private fun mediaPriority(item: MediaItem): Int {
         var score = when (item.source) {
+            "api" -> 40
             "sidecar" -> 30
             "json", "embedded" -> 20
             "meta" -> 0
@@ -764,12 +952,37 @@ class InstagramMediaResolver(
             .getOrNull()
             ?.removePrefix("www.")
 
+    private fun mediaIdFromShortcode(shortcode: String): String? {
+        var value = BigInteger.ZERO
+        shortcode.take(InstagramShortcodeLength).forEach { char ->
+            val index = InstagramShortcodeAlphabet.indexOf(char)
+            if (index < 0) return null
+            value = value.shiftLeft(6).add(BigInteger.valueOf(index.toLong()))
+        }
+        return value.toString()
+    }
+
+    private fun extractRegexGroup(
+        value: String,
+        regex: Regex,
+    ): String? =
+        regex.find(value)?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() }
+
     private companion object {
         data class RequestProfile(
             val name: String,
             val userAgent: String,
         )
 
+        const val InstagramDesktopUserAgent =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        const val DefaultIgAppId = "936619743392459"
+        const val InstagramShortcodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        const val InstagramShortcodeLength = 11
+        const val ApiImageRatioTolerance = 0.03
+        const val ApiNonCroppedBonus = 100_000_000
+        const val ApiVideoTypeWeight = 10_000_000
         val requestProfiles = listOf(
             RequestProfile(
                 name = "android",
@@ -800,6 +1013,9 @@ class InstagramMediaResolver(
         val profileImagePathRegex = Regex("""/t51\.[^/]*-19/""")
         val croppedStpRegex = Regex("""(^|_)c\d+(?:\.\d+){3}a(?:_|$)""")
         val stpSizeRegex = Regex("""(?:^|_)[ps](\d+)x(\d+)(?:_|$)""")
+        val csrfTokenRegex = Regex(""""csrf_token"\s*:\s*"([^"]+)"""")
+        val igAppIdRegex = Regex(""""X-IG-App-ID"\s*:\s*"([^"]+)"""")
+        val lsdTokenRegex = Regex(""""LSD"[^}]*"token"\s*:\s*"([^"]+)"""")
         val escapedSlashRegex = Regex("""\\+/""")
         val escapedQuoteRegex = Regex("""\\+"""")
         val escapedAmpersandRegex = Regex("""\\+u0026""", RegexOption.IGNORE_CASE)
@@ -835,3 +1051,9 @@ class InstagramMediaResolver(
 private fun JSONObject.stringOrNull(name: String): String? =
     optString(name)
         .takeIf { value -> value.isNotBlank() && value != "null" }
+
+private fun JSONObject.jsonArrayOrNull(name: String): JSONArray? =
+    opt(name) as? JSONArray
+
+private fun JSONObject.jsonObjectOrNull(name: String): JSONObject? =
+    opt(name) as? JSONObject

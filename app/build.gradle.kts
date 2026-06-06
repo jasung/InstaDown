@@ -14,8 +14,8 @@ android {
         applicationId = "com.codex.indown"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.3.1"
+        versionCode = 15
+        versionName = "0.3.2"
     }
 
     buildFeatures {
@@ -53,8 +53,8 @@ tasks.register("exportReleaseApk") {
         val outputDir = rootProject.layout.projectDirectory.dir("apks").asFile
         outputDir.mkdirs()
 
-        val versionName = android.defaultConfig.versionName ?: "0.3.1"
-        val versionCode = android.defaultConfig.versionCode ?: 14
+        val versionName = android.defaultConfig.versionName ?: "0.3.2"
+        val versionCode = android.defaultConfig.versionCode ?: 15
         val targetApk = outputDir.resolve("InstaDown-v$versionName-build$versionCode.apk")
         sourceApk.copyTo(targetApk, overwrite = true)
 
@@ -93,4 +93,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     debugImplementation("androidx.compose.ui:ui-tooling:$composeVersion")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }
