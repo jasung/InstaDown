@@ -1,11 +1,11 @@
 {
-  "versionName": "0.3.2",
-  "versionCode": 15,
+  "versionName": "0.3.3",
+  "versionCode": 16,
   "apkUrl": "https://github.com/jasung/InstaDown/raw/main/release/InstaDown-latest.apk",
   "message": "새 버전이 있습니다.",
   "releaseNotes": [
-    "Instagram 사진 저장 시 잘린 미리보기 대신 원본 비율 후보를 우선 사용하도록 수정했습니다.",
-    "Instagram API 미디어 후보에서 더 좋은 이미지/영상 URL을 선택하도록 보강했습니다."
+    "Instagram API가 막힌 경우에도 공개 direct media 이미지 후보를 확인하도록 수정했습니다.",
+    "일부 게시물에서 640px 크롭 미리보기가 저장되는 문제를 보강했습니다."
   ],
   "required": false
 }

@@ -12,6 +12,47 @@ import org.junit.Test
 
 class InstagramMediaResolverTest {
     @Test
+    fun resolveUsesDirectMediaImageWhenApiFailsAndMetadataIsCropped() = runBlocking {
+        val shortcode = "DZO-swVvu8e"
+        val mediaId = "3913340880676646686"
+        val croppedPreviewUrl =
+            "https://scontent.cdninstagram.com/v/t51.29350-15/preview.jpg?stp=c288.0.864.864a_dst-jpg_e35_s640x640"
+        val directMediaUrl = "https://www.instagram.com/p/$shortcode/media/?size=l"
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                StaticHtmlInterceptor(
+                    listOf(
+                        StubResponse("www.instagram.com", "/p/$shortcode/") to StubPayload(
+                            """
+                                <html><head>
+                                    <meta property="og:image" content="$croppedPreviewUrl">
+                                </head></html>
+                            """.trimIndent(),
+                        ),
+                        StubResponse("www.instagram.com", "/p/$shortcode/embed/") to StubPayload(
+                            """
+                                <html><head>
+                                    <meta property="og:image" content="$croppedPreviewUrl">
+                                </head></html>
+                            """.trimIndent(),
+                        ),
+                        StubResponse("www.instagram.com", "/api/v1/media/$mediaId/info/") to StubPayload("<html></html>"),
+                        StubResponse("www.instagram.com", "/p/$shortcode/media/") to StubPayload(
+                            "image-bytes",
+                            "image/jpeg",
+                        ),
+                    ),
+                ),
+            )
+            .build()
+
+        val resolved = InstagramMediaResolver(client).resolve("https://www.instagram.com/p/$shortcode/?igsh=test")
+
+        assertEquals(listOf(MediaKind.Image), resolved.items.map { it.kind })
+        assertEquals(listOf(directMediaUrl), resolved.items.map { it.url })
+    }
+
+    @Test
     fun resolveUsesApiImageCandidateThatMatchesOriginalRatio() = runBlocking {
         val shortcode = "DZO-swVvu8e"
         val mediaId = "3913340880676646686"
@@ -173,6 +214,7 @@ class InstagramMediaResolverTest {
                 .protocol(Protocol.HTTP_1_1)
                 .code(200)
                 .message("OK")
+                .header("Content-Type", payload.contentType)
                 .body(payload.body.toResponseBody(payload.contentType.toMediaType()))
                 .build()
         }

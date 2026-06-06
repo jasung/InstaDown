@@ -42,6 +42,16 @@ class InstagramMediaResolver(
                 putPreferredMedia(selected, item)
             }
         }
+        if (selected.values.none { it.kind == MediaKind.Video } &&
+            directMediaImageUrl(pageUrl) != null
+        ) {
+            val directResolved = runCatching { resolveDirectMediaImage(pageUrl) }
+                .onFailure { error -> lastFailure = error }
+                .getOrDefault(ResolvedMedia(emptyList()))
+            directResolved.items.forEach { item ->
+                putPreferredMedia(selected, item)
+            }
+        }
 
         if (selected.isEmpty() && !postInfo.hasContent) {
             lastFailure?.let { throw it }
@@ -188,6 +198,34 @@ class InstagramMediaResolver(
             }
             val html = response.body?.string() ?: throw IOException("보조 미디어 응답 본문이 비어 있습니다.")
             parseMirrorHtml(html)
+        }
+    }
+
+    private fun resolveDirectMediaImage(pageUrl: String): ResolvedMedia {
+        val directUrl = directMediaImageUrl(pageUrl) ?: return ResolvedMedia(emptyList())
+        val request = Request.Builder()
+            .url(directUrl)
+            .header("User-Agent", InstagramUserAgent)
+            .header("Accept", "image/*,*/*;q=0.8")
+            .header("Referer", pageUrl)
+            .build()
+
+        return client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use ResolvedMedia(emptyList())
+            val contentType = response.header("Content-Type").orEmpty()
+            if (!contentType.startsWith("image/")) return@use ResolvedMedia(emptyList())
+
+            ResolvedMedia(
+                items = listOf(
+                    MediaItem(
+                        url = response.request.url.toString(),
+                        kind = MediaKind.Image,
+                        source = "direct-media",
+                        previewUrl = response.request.url.toString(),
+                    ),
+                ),
+                postInfo = PostInfo(siteName = mediaHostLabel(response.request.url.toString())),
+            )
         }
     }
 
@@ -607,6 +645,15 @@ class InstagramMediaResolver(
         val type = pathSegments[typeIndex]
         val shortcode = pathSegments[typeIndex + 1]
         return "https://www.instagram.com/$type/$shortcode/embed/"
+    }
+
+    private fun directMediaImageUrl(url: String): String? {
+        val pathSegments = pathSegments(url)
+        val typeIndex = pathSegments.indexOf("p")
+        if (typeIndex < 0 || typeIndex + 1 >= pathSegments.size) return null
+
+        val shortcode = pathSegments[typeIndex + 1]
+        return "https://www.instagram.com/p/$shortcode/media/?size=l"
     }
 
     private fun shortcodeFrom(url: String): String? {

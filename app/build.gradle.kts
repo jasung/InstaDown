@@ -14,8 +14,8 @@ android {
         applicationId = "com.codex.indown"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.3.2"
+        versionCode = 16
+        versionName = "0.3.3"
     }
 
     buildFeatures {
@@ -53,8 +53,8 @@ tasks.register("exportReleaseApk") {
         val outputDir = rootProject.layout.projectDirectory.dir("apks").asFile
         outputDir.mkdirs()
 
-        val versionName = android.defaultConfig.versionName ?: "0.3.2"
-        val versionCode = android.defaultConfig.versionCode ?: 15
+        val versionName = android.defaultConfig.versionName ?: "0.3.3"
+        val versionCode = android.defaultConfig.versionCode ?: 16
         val targetApk = outputDir.resolve("InstaDown-v$versionName-build$versionCode.apk")
         sourceApk.copyTo(targetApk, overwrite = true)
 
