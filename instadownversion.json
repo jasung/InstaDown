@@ -1,11 +1,11 @@
 {
-  "versionName": "0.3.3",
-  "versionCode": 16,
-  "apkUrl": "https://github.com/jasung/InstaDown/raw/main/release/InstaDown-latest.apk",
+  "versionName": "0.3.4",
+  "versionCode": 17,
+  "apkUrl": "https://github.com/jasung/InstaDown/releases/download/v0.3.4-build17/InstaDown-v0.3.4-build17.apk",
   "message": "새 버전이 있습니다.",
   "releaseNotes": [
-    "Instagram API가 막힌 경우에도 공개 direct media 이미지 후보를 확인하도록 수정했습니다.",
-    "일부 게시물에서 640px 크롭 미리보기가 저장되는 문제를 보강했습니다."
+    "여러 장 이미지 게시물 인식을 개선했습니다.",
+    "릴스 영상 미리보기 인식을 보강했습니다."
   ],
   "required": false
 }

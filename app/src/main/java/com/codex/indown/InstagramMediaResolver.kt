@@ -721,6 +721,7 @@ class InstagramMediaResolver(
                 .replace(escapedEqualsRegex, "=")
                 .replace(escapedQuestionRegex, "?")
                 .replace(escapedPercentRegex, "%")
+                .replace(escapedLiteralPercentRegex, "%")
                 .replace("&amp;", "&")
                 .replace("&quot;", "\"")
         }
@@ -923,7 +924,8 @@ class InstagramMediaResolver(
                 lowerUrl.endsWith(".jpg") ||
                 lowerUrl.endsWith(".jpeg") ||
                 lowerUrl.endsWith(".png") ||
-                lowerUrl.endsWith(".webp") -> MediaKind.Image
+                lowerUrl.endsWith(".webp") ||
+                lowerUrl.endsWith(".heic") -> MediaKind.Image
             else -> MediaKind.Unknown
         }
     }
@@ -1056,7 +1058,7 @@ class InstagramMediaResolver(
             RegexOption.IGNORE_CASE,
         )
         val looseUrlRegex = Regex("""https?:\\?/\\?/[^"'<>\s)]+""")
-        val mediaExtensionRegex = Regex("""\.(jpg|jpeg|png|webp|mp4|mov)(\?|&|$)""")
+        val mediaExtensionRegex = Regex("""\.(jpg|jpeg|png|webp|heic|mp4|mov)(\?|&|$)""")
         val profileImagePathRegex = Regex("""/t51\.[^/]*-19/""")
         val croppedStpRegex = Regex("""(^|_)c\d+(?:\.\d+){3}a(?:_|$)""")
         val stpSizeRegex = Regex("""(?:^|_)[ps](\d+)x(\d+)(?:_|$)""")
@@ -1070,6 +1072,7 @@ class InstagramMediaResolver(
         val escapedEqualsRegex = Regex("""\\+u003d""", RegexOption.IGNORE_CASE)
         val escapedQuestionRegex = Regex("""\\+u003f""", RegexOption.IGNORE_CASE)
         val escapedPercentRegex = Regex("""\\+u0025""", RegexOption.IGNORE_CASE)
+        val escapedLiteralPercentRegex = Regex("""\\+%""")
         val sidecarMarker = """"edge_sidecar_to_children""""
         val metaMediaKeys = setOf(
             "og:image",

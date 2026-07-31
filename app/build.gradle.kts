@@ -14,8 +14,8 @@ android {
         applicationId = "com.codex.indown"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.3.3"
+        versionCode = 17
+        versionName = "0.3.4"
     }
 
     buildFeatures {
@@ -53,8 +53,8 @@ tasks.register("exportReleaseApk") {
         val outputDir = rootProject.layout.projectDirectory.dir("apks").asFile
         outputDir.mkdirs()
 
-        val versionName = android.defaultConfig.versionName ?: "0.3.3"
-        val versionCode = android.defaultConfig.versionCode ?: 16
+        val versionName = android.defaultConfig.versionName ?: "0.3.4"
+        val versionCode = android.defaultConfig.versionCode ?: 17
         val targetApk = outputDir.resolve("InstaDown-v$versionName-build$versionCode.apk")
         sourceApk.copyTo(targetApk, overwrite = true)
 
@@ -62,7 +62,7 @@ tasks.register("exportReleaseApk") {
         publicReleaseDir.mkdirs()
         sourceApk.copyTo(publicReleaseDir.resolve("InstaDown-latest.apk"), overwrite = true)
 
-        val apkNamePattern = Regex("""(InstaDown|InDown)-release-v.*\.apk""")
+        val apkNamePattern = Regex("""(InstaDown-v.*-build\d+|InstaDown-release-v.*|InDown-release-v.*)\.apk""")
         outputDir
             .listFiles { file -> file.isFile && apkNamePattern.matches(file.name) }
             ?.sortedByDescending { file -> file.lastModified() }
